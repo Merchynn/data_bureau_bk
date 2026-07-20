@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Dados e artefatos
+data/
+output/
+*.csv
+*.csv.gz
+*.txt
+*.log
+*.part
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

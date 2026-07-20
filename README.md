@@ -1,77 +1,71 @@
-Este é um modelo de README.md estruturado para destacar suas habilidades técnicas para recrutadores de Big Techs e Bancos. Ele foca na resolução de um problema real de engenharia de dados: a manipulação eficiente de grandes volumes de dados.
+# BigQuery Export Consolidator
 
-Pipeline de Extração e Consolidação de Dados: BigQuery para Local
-Descrição do Projeto
-Este projeto demonstra um fluxo completo de engenharia de dados para extrair, transferir e consolidar grandes volumes de dados (14GB+) originados no Google BigQuery. O foco principal é superar a limitação de exportação do BigQuery, que fragmenta tabelas grandes em centenas de arquivos, e consolidá-los localmente de forma performática.
+Utilitário em Python para consolidar centenas de arquivos `CSV.GZ` gerados por exports fragmentados do BigQuery em um único arquivo, mantendo apenas o cabeçalho da primeira parte.
 
-Problema
-Ao trabalhar com tabelas massivas no BigQuery, a exportação direta para um único arquivo não é suportada. O sistema gera múltiplos arquivos fragmentados (shards). O desafio é baixar esses arquivos e uni-los sem exceder a memória RAM disponível no ambiente local.
+## Problema resolvido
 
-Tecnologias Utilizadas
-Google BigQuery (SQL): Manipulação e filtragem de dados em larga escala.
+Exports de tabelas grandes no BigQuery normalmente são divididos em vários objetos no Cloud Storage. Baixar e concatenar esses arquivos de forma ingênua pode duplicar cabeçalhos ou consumir memória demais.
 
-Google Cloud CLI (gcloud/bq/gsutil): Automação de processos de extração e transferência Cloud-to-Local.
+Este projeto processa os arquivos por streaming:
 
-Python 3.x: Processamento de arquivos via streaming para eficiência de memória.
+1. localiza e ordena as partes;
+2. descompacta cada arquivo diretamente para a saída;
+3. mantém o cabeçalho apenas da primeira parte;
+4. grava em arquivo temporário e substitui a saída somente ao final;
+5. informa quantidade de arquivos, tamanho e duração.
 
-Bibliotecas Python: gzip, shutil, pathlib.
+No caso de uso original, a rotina foi aplicada a um volume superior a 14 GB e mais de 400 arquivos. Esses números representam o contexto operacional original, não um benchmark automatizado deste repositório.
 
-Fluxo de Trabalho
-1. Preparação dos Dados (SQL)
-Antes da extração, os dados são processados e atualizados diretamente no Lakehouse via DML otimizado.
+## Requisitos
 
-SQL
-UPDATE `lakehouse-sbox-credit.sbox_processos.TB_DADOS_BUREAU` A
-SET status_receita = 2
-FROM `lakehouse-sbox-credit.sbox_processos.TB_EQUIFAX_FEV` B
-WHERE A.DOC = B.CPF
-  AND CAST(B.score AS INT64) > 349;
-2. Extração e Transferência (CLI)
-Utilização do GCP CLI para exportação fragmentada e download multithread:
+- Python 3.10 ou superior;
+- somente a biblioteca padrão do Python.
 
-Bash
-# Exportacao do BigQuery para Google Cloud Storage (Bucket) em GZIP
-bq extract --destination_format=CSV --compression=GZIP --field_delimiter="," \
-"lakehouse-sbox-credit:sbox_processos.TB_DADOS_BUREAU" \
-gs://nome_do_seu_bucket/DADOS_BUREAU/dados_bureau_*.csv.gz
+## Uso
 
-# Download paralelo (multithread) para maquina local
-gsutil -m cp -r gs://nome_do_seu_bucket/DADOS_BUREAU "C:\Caminho\Local"
-3. Consolidação Eficiente (Python)
-O script de consolidação foi desenvolvido com foco em I/O bound efficiency. Em vez de carregar os 14GB na RAM, ele utiliza o método de streaming shutil.copyfileobj, processando os dados em buffers.
+```bash
+python main.py \
+  --input-dir "./data/export" \
+  --output-file "./output/consolidated.csv"
+```
 
-Destaques técnicos do script:
+Outro padrão de arquivo pode ser informado:
 
-Memory Safety: Consumo de memória constante, independentemente do tamanho do arquivo final.
+```bash
+python main.py \
+  --input-dir "./data/export" \
+  --output-file "./output/consolidated.txt" \
+  --pattern "*.gz"
+```
 
-Header Handling: Tratamento automático para manter o cabeçalho apenas na primeira linha do arquivo consolidado.
+## Testes
 
-Automation: Descompressão e união em um único passo.
+```bash
+python -m unittest discover -s tests -v
+```
 
-Detalhes de Implementação (Python)
-Python
-import gzip
-import shutil
-import glob
-from pathlib import Path
+## Decisões técnicas
 
-# O script percorre todos os arquivos .csv.gz, realiza a leitura
-# em blocos e escreve no arquivo final, descartando headers repetidos.
-# (Consulte o arquivo consolidate_bq_extracts.py para o código completo)
-Resultados
-Volume Processado: 14GB+
+- **Streaming:** evita carregar o conjunto completo na memória.
+- **Ordenação determinística:** processa os shards sempre na mesma ordem.
+- **Escrita atômica:** a saída definitiva só é criada após a conclusão.
+- **Falha explícita:** diretórios inválidos ou ausência de arquivos encerram a execução com erro.
+- **CLI parametrizada:** nenhum caminho de máquina ou usuário fica fixado no código.
 
-Arquivos Fragmentados: 400+
+## Estrutura
 
-Tempo de Consolidação: Otimizado via streaming.
+```text
+.
+├── main.py
+├── tests/
+│   └── test_main.py
+├── .gitignore
+└── README.md
+```
 
-Uso de Memória: Inferior a 100MB de RAM.
+## Limitações
 
-Como Utilizar
-Configure suas credenciais do GCP via gcloud auth login.
-
-Execute o comando de extração contido na seção CLI.
-
-Configure os caminhos de entrada e saída no script Python.
-
-Execute o script para obter o arquivo consolidado pronto para análise.
+- pressupõe que todos os arquivos possuam o mesmo layout;
+- remove a primeira linha de todas as partes após a primeira;
+- não valida tipos ou quantidade de colunas;
+- não realiza download do Cloud Storage — a consolidação começa com os arquivos já disponíveis localmente.
